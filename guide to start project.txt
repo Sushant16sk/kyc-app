@@ -4,3 +4,8 @@ cd kyc-app
 conda env create -f environment.yml
 conda activate kyc-env
 python app.py
+
+
+
+pip install Flask Flask-SQLAlchemy psycopg2-binary opencv-contrib-python easyocr Pillow
+

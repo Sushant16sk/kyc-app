@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card mb-4">
+      <div class="card-header bg-white">
+        <ul class="nav nav-pills nav-justified">
+          <li class="nav-item">
+            <span class="nav-link active">
+              <i class="bi bi-camera-reels-fill me-1"></i>
+              Step 1: Face Scan
+            </span>
+          </li>
+          <li class="nav-item">
+            <span class="nav-link disabled">
+              <i class="bi bi-file-earmark-text-fill me-1"></i>
+              Step 2: Document
+            </span>
+          </li>
+        </ul>
+      </div>
+      <div class="card-body">
+        <form 
+          method="post" 
+          action="{{ url_for('register') }}" 
+          enctype="multipart/form-data"
+        >
+          <div class="mb-3">
+            <label for="name" class="form-label">Full Name</label>
+            <input
+              id="name"
+              type="text"
+              name="name"
+              class="form-control"
+              placeholder="Your full name"
+              required
+            >
+          </div>
+          <div class="mb-3">
+            <label for="age" class="form-label">Age</label>
+            <input
+              id="age"
+              type="number"
+              name="age"
+              class="form-control"
+              placeholder="Your age"
+              required
+            >
+          </div>
+          <div class="mb-3">
+            <label for="image" class="form-label">Upload Face Photo</label>
+            <input
+              id="image"
+              type="file"
+              name="image"
+              accept="image/*"
+              class="form-control"
+              required
+              onchange="previewImage(event)"
+            >
+          </div>
+          <div class="text-center mb-3">
+            <img
+              id="img-preview"
+              src="#"
+              alt="Image preview"
+              class="img-thumbnail"
+              style="display:none; max-width:200px;"
+            >
+          </div>
+          <div class="text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-circle-fill me-1"></i>
+              Register Face
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function previewImage(event) {
+    const [file] = event.target.files;
+    const img = document.getElementById('img-preview');
+    if (file) {
+      img.src = URL.createObjectURL(file);
+      img.style.display = 'block';
+    } else {
+      img.style.display = 'none';
+    }
+  }
+</script>
+{% endblock %}

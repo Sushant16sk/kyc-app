@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Conda / venv
+.venv/
+kyc-env/
+
+# VSCode settings
+.vscode/
+
+# Uploaded images
+uploads/
+
+# OS cruft
+.DS_Store
+Thumbs.db

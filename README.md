@@ -1,0 +1,6 @@
+
+git clone https://github.com/YourUser/kyc-app.git
+cd kyc-app
+conda env create -f environment.yml
+conda activate kyc-env
+python app.py

@@ -1,77 +1,136 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-6">
+  <div class="col-md-6">
     <div class="card mb-4">
       <div class="card-header bg-white">
-        <ul class="nav nav-pills nav-justified">
-          <li class="nav-item">
-            <span class="nav-link active">
-              <i class="bi bi-camera-reels-fill me-1"></i>
-              Step 1: Face Scan
-            </span>
-          </li>
-          <li class="nav-item">
-            <span class="nav-link disabled">
-              <i class="bi bi-file-earmark-text-fill me-1"></i>
-              Step 2: Document
-            </span>
-          </li>
-        </ul>
+        <h5 class="card-title mb-0">
+          <i class="bi bi-camera-reels"></i> Step 1: Face Scan &amp; Register
+        </h5>
       </div>
       <div class="card-body">
         <form 
           method="post" 
           action="{{ url_for('register') }}" 
           enctype="multipart/form-data"
+          id="register-form"
         >
+          <!-- Personal fields -->
           <div class="mb-3">
-            <label for="name" class="form-label">Full Name</label>
-            <input
-              id="name"
-              type="text"
-              name="name"
-              class="form-control"
-              placeholder="Your full name"
+            <label class="form-label">Full Name</label>
+            <input 
+              type="text" 
+              name="name" 
+              class="form-control" 
+              placeholder="Your full name" 
               required
             >
           </div>
           <div class="mb-3">
-            <label for="age" class="form-label">Age</label>
-            <input
-              id="age"
-              type="number"
-              name="age"
-              class="form-control"
-              placeholder="Your age"
+            <label class="form-label">Age</label>
+            <input 
+              type="number" 
+              name="age" 
+              class="form-control" 
+              placeholder="Your age" 
               required
             >
           </div>
+
+          <!-- option toggle -->
           <div class="mb-3">
-            <label for="image" class="form-label">Upload Face Photo</label>
-            <input
-              id="image"
-              type="file"
-              name="image"
-              accept="image/*"
+            <label class="form-label">Choose input method</label>
+            <div>
+              <div class="form-check form-check-inline">
+                <input 
+                  class="form-check-input" 
+                  type="radio" 
+                  name="captureMode" 
+                  id="mode-upload" 
+                  value="upload" 
+                  checked
+                >
+                <label class="form-check-label" for="mode-upload">
+                  Upload Photo
+                </label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input 
+                  class="form-check-input" 
+                  type="radio" 
+                  name="captureMode" 
+                  id="mode-webcam" 
+                  value="webcam"
+                >
+                <label class="form-check-label" for="mode-webcam">
+                  Use Webcam
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- File input (used for both paths) + preview -->
+          <div class="mb-3" id="upload-section">
+            <label class="form-label">Upload or Capture Photo</label>
+            <input 
+              type="file" 
+              name="image" 
+              accept="image/*" 
               class="form-control"
-              required
-              onchange="previewImage(event)"
+              id="image-file"
+              onchange="previewUpload(event)"
+            >
+            <img 
+              id="upload-preview" 
+              src="#" 
+              alt="Upload Preview" 
+              class="img-thumbnail mt-2" 
+              style="display:none; max-width:320px;"
             >
           </div>
-          <div class="text-center mb-3">
-            <img
-              id="img-preview"
-              src="#"
-              alt="Image preview"
-              class="img-thumbnail"
-              style="display:none; max-width:200px;"
+
+          <!-- Webcam capture & preview -->
+          <div class="mb-3" id="webcam-section" style="display:none;">
+            <video 
+              id="video" 
+              width="320" 
+              height="240" 
+              autoplay 
+              muted 
+              class="border mb-2" 
+              style="display:none;"
+            ></video>
+            <img 
+              id="snapshot-preview" 
+              src="#" 
+              alt="Snapshot Preview" 
+              class="img-thumbnail mb-2" 
+              style="display:none; max-width:320px;"
             >
+
+            <div>
+              <button 
+                type="button" 
+                id="capture-btn" 
+                class="btn btn-secondary me-2" 
+                style="display:none;"
+              >
+                <i class="bi bi-camera-fill me-1"></i> Capture
+              </button>
+              <button 
+                type="button" 
+                id="retake-btn" 
+                class="btn btn-warning me-2" 
+                style="display:none;"
+              >
+                <i class="bi bi-arrow-repeat me-1"></i> Retake
+              </button>
+            </div>
           </div>
-          <div class="text-end">
+
+          <div class="text-end mt-4">
             <button type="submit" class="btn btn-primary">
-              <i class="bi bi-check-circle-fill me-1"></i>
-              Register Face
+              <i class="bi bi-check-circle-fill me-1"></i> Register Face
             </button>
           </div>
         </form>
@@ -81,15 +140,112 @@
 </div>
 
 <script>
-  function previewImage(event) {
+  let stream = null;
+
+  const modeUpload   = document.getElementById('mode-upload');
+  const modeWebcam   = document.getElementById('mode-webcam');
+  const uploadSec    = document.getElementById('upload-section');
+  const webcamSec    = document.getElementById('webcam-section');
+  const fileInput    = document.getElementById('image-file');
+  const uploadPreview= document.getElementById('upload-preview');
+  const videoEl      = document.getElementById('video');
+  const snapshotPreview = document.getElementById('snapshot-preview');
+  const captureBtn   = document.getElementById('capture-btn');
+  const retakeBtn    = document.getElementById('retake-btn');
+
+  const canvas = document.createElement('canvas');
+
+  // Toggle handlers
+  modeUpload.addEventListener('change', () => {
+    stopWebcam();
+    uploadSec.style.display = 'block';
+    webcamSec.style.display = 'none';
+    uploadPreview.style.display = fileInput.files.length ? 'block' : 'none';
+  });
+
+  modeWebcam.addEventListener('change', () => {
+    uploadSec.style.display = 'none';
+    webcamSec.style.display = 'block';
+    initWebcamUI();
+  });
+
+  // Preview for manual upload
+  function previewUpload(event) {
     const [file] = event.target.files;
-    const img = document.getElementById('img-preview');
     if (file) {
-      img.src = URL.createObjectURL(file);
-      img.style.display = 'block';
+      uploadPreview.src = URL.createObjectURL(file);
+      uploadPreview.style.display = 'block';
     } else {
-      img.style.display = 'none';
+      uploadPreview.style.display = 'none';
     }
   }
+
+  // Webcam UI setup
+  function initWebcamUI() {
+    snapshotPreview.style.display = 'none';
+    captureBtn.style.display      = 'inline-block';
+    retakeBtn.style.display       = 'none';
+    videoEl.style.display         = 'block';
+    startWebcam();
+  }
+
+  function startWebcam() {
+    if (stream) return;
+    navigator.mediaDevices.getUserMedia({ video:true })
+      .then(s => {
+        stream = s;
+        videoEl.srcObject = s;
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Could not access camera.');
+      });
+  }
+
+  function stopWebcam() {
+    if (!stream) return;
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    videoEl.style.display   = 'none';
+    captureBtn.style.display= 'none';
+  }
+
+  // Capture & compress to JPEG via Blob
+  captureBtn.addEventListener('click', () => {
+    // draw at 320×240
+    canvas.width  = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, 320, 240);
+
+    // get a JPEG blob @ 60% quality
+    canvas.toBlob(blob => {
+      // turn blob into a File and put into the <input type="file">
+      const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' });
+      const dt   = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+
+      // show preview
+      snapshotPreview.src = URL.createObjectURL(blob);
+      snapshotPreview.style.display = 'block';
+
+      // swap buttons/video
+      videoEl.style.display    = 'none';
+      captureBtn.style.display = 'none';
+      retakeBtn.style.display  = 'inline-block';
+
+      // stop camera
+      stopWebcam();
+    }, 'image/jpeg', 0.6);
+  });
+
+  // Retake flow
+  retakeBtn.addEventListener('click', () => {
+    snapshotPreview.style.display = 'none';
+    initWebcamUI();
+    fileInput.value = '';      // clear file input
+    uploadPreview.style.display = 'none';
+  });
 </script>
 {% endblock %}

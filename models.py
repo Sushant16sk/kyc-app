@@ -8,7 +8,7 @@ class User(db.Model):
     name               = db.Column(db.String(128), nullable=False)
     age                = db.Column(db.Integer, nullable=False)
     face_image         = db.Column(db.String(256), nullable=False)
-    face_encoding      = db.Column(db.PickleType, nullable=False)
+    face_encoding      = db.Column(db.PickleType, nullable=False)  # store 128-d vector
     liveness_image     = db.Column(db.String(256), nullable=True)
     liveness_pass      = db.Column(db.Boolean, default=False)
 

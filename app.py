@@ -11,6 +11,7 @@ from PIL import Image
 
 import cv2
 import easyocr
+from flask import send_from_directory
 import face_recognition
 
 from models import db, User, Document
@@ -23,6 +24,10 @@ app.config.update(
     SQLALCHEMY_TRACK_MODIFICATIONS= False,
     UPLOAD_FOLDER                 = os.path.join(app.root_path, 'uploads')
 )
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 db.init_app(app)
 with app.app_context():
@@ -54,30 +59,37 @@ def index():
 def register():
     name = request.form['name']
     age  = int(request.form['age'])
-    imgf = request.files.get('image')
-    if not imgf:
-        flash('Please upload a face image', 'danger')
-        return redirect(url_for('index'))
 
-    # Save upload
-    filename = secure_filename(imgf.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    imgf.save(filepath)
+    # 1) Check for webcam snapshot first
+    b64 = request.form.get('register_image_data')
+    if b64:
+        header, encoded = b64.split(',',1)
+        img_data = base64.b64decode(encoded)
+        filename = f"selfie_{name}_{age}.png"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        with open(filepath, 'wb') as f:
+            f.write(img_data)
+    else:
+        # 2) Fallback to file upload
+        imgf = request.files.get('image')
+        if not imgf:
+            flash('Please upload or capture a face image', 'danger')
+            return redirect(url_for('index'))
+        filename = secure_filename(imgf.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        imgf.save(filepath)
 
-    # Haar‐cascade face detection
+    # → existing face detection + encoding logic follows
     img  = cv2.imread(filepath)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(100, 100)
-    )
-    if len(faces) == 0:
+    faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(100,100))
+    if not len(faces):
         os.remove(filepath)
         flash('No face detected. Try again.', 'danger')
         return redirect(url_for('index'))
 
-    # Extract face encoding
     encs = face_recognition.face_encodings(
-        face_recognition.load_image_file(filepath)
+      face_recognition.load_image_file(filepath)
     )
     if not encs:
         os.remove(filepath)
@@ -85,15 +97,16 @@ def register():
         return redirect(url_for('index'))
 
     user = User(
-        name          = name,
-        age           = age,
-        face_image    = filename,
-        face_encoding = encs[0].tolist()
+      name          = name,
+      age           = age,
+      face_image    = filename,
+      face_encoding = encs[0].tolist()
     )
     db.session.add(user)
     db.session.commit()
 
     return redirect(url_for('liveness', user_id=user.id))
+
 
 
 @app.route('/liveness/<int:user_id>')
@@ -145,6 +158,11 @@ def liveness_upload(user_id):
     # 5) Save liveness result
     user.liveness_image = filename
     user.liveness_pass  = (face_match and blink_ok)
+
+    if user.liveness_pass:
+        # replace the original registration encoding with the liveness one
+        user.face_encoding = liv_encs[0].tolist()
+
     db.session.commit()
 
     if not user.liveness_pass:
@@ -156,7 +174,17 @@ def liveness_upload(user_id):
 
 @app.route('/document/<int:user_id>')
 def upload_document(user_id):
-    return render_template('document.html', user_id=user_id)
+    user = User.query.get_or_404(user_id)
+
+    # Prefer the liveness selfie if it exists and liveness_pass is True
+    selfie_file = user.liveness_image if (user.liveness_pass and user.liveness_image) else user.face_image
+
+    return render_template(
+        'document.html',
+        user_id=user_id,
+        selfie=selfie_file            # ← NEW
+    )
+
 
 
 @app.route('/document_upload/<int:user_id>', methods=['POST'])
@@ -178,6 +206,19 @@ def document_upload(user_id):
     # Simple name‐in‐text check
     valid = user.name.lower() in text.lower()
 
+
+
+# --- new: face-to-ID match ---
+    # load and encode the face on the ID
+    id_image = face_recognition.load_image_file(filepath)
+    id_encs  = face_recognition.face_encodings(id_image)
+    if id_encs:
+        # compare distance to the registered selfie
+        reg_enc = np.array(user.face_encoding)
+        dist    = face_recognition.face_distance([reg_enc], id_encs[0])[0]
+        face_match = (dist < 0.6)
+    else:
+        face_match = False
     # Face‐to‐ID match
     id_encs = face_recognition.face_encodings(
         face_recognition.load_image_file(filepath)

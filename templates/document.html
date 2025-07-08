@@ -1,90 +1,346 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-6">
-    <div class="card mb-4">
-      <div class="card-header bg-white">
-        <ul class="nav nav-pills nav-justified">
-          <li class="nav-item">
-            <span class="nav-link disabled">
-              <i class="bi bi-camera-reels-fill me-1"></i>
-              Step 1: Face Scan
-            </span>
-          </li>
-          <li class="nav-item">
-            <span class="nav-link active">
-              <i class="bi bi-file-earmark-text-fill me-1"></i>
-              Step 2: Document
-            </span>
-          </li>
-        </ul>
+
+<head>
+    <script src="https://d3js.org/d3-delaunay.v7.min.js"></script>
+</head>
+
+<style>
+  /* --- Main Overlay and Card (No changes) --- */
+  #verification-overlay {
+    position: fixed;
+    inset: 0;
+    background: #f8f9fa;
+    display: none;
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    overflow-y: auto;
+  }
+  .verification-card {
+    background: #fff;
+    border-radius: 0.75rem;
+    box-shadow: 0 0.5rem 1.5rem rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 650px;
+    padding: 2rem;
+    color: #495057;
+  }
+  .verification-card h2 {
+    font-weight: 600;
+    color: #212529;
+    text-align: center;
+  }
+  .verification-card .subtitle {
+    text-align: center;
+    color: #6c757d;
+    margin-bottom: 2rem;
+  }
+  
+  /* --- Progress Bar (No changes) --- */
+  .progress-container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .progress-label { font-weight: 500; flex-shrink: 0; }
+  .progress { height: 0.75rem; width: 100%; }
+
+  /* --- Image Display --- */
+  .image-analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .image-box {
+    text-align: center;
+  }
+  .image-box h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .image-wrapper {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+  }
+  .image-wrapper img {
+    width: 100%;
+    border: 1px solid #dee2e6;
+    display: block;
+    border-radius: 0.5rem;
+  }
+  .image-wrapper canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .scan-bar {
+    position: absolute;
+    left: 0;
+    top: 0; /* Initial position */
+    width: 100%;
+    height: 3px;
+    background: rgba(0, 255, 255, 0.7);
+    box-shadow: 0 0 10px rgba(0, 255, 255, 1);
+    /* Corrected animation call */
+    animation: scan-animation 2s linear infinite;
+  }
+  /* CORRECTED KEYFRAME ANIMATION */
+  @keyframes scan-animation {
+    0% {
+        top: 0%;
+    }
+    50% {
+        top: calc(100% - 3px); /* Move to the bottom, minus bar height */
+    }
+    100% {
+        top: 0%;
+    }
+  }
+  .image-status {
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-top: 0.5rem;
+  }
+  .image-status .bi { color: #198754; }
+
+  /* --- Verification Analysis List (No changes) --- */
+  .analysis-list {
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: 2rem;
+  }
+  .analysis-list li {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #e9ecef;
+  }
+  .analysis-list li:last-child { border-bottom: none; }
+  .status-icon { font-size: 1.5rem; width: 40px; flex-shrink: 0; }
+  .status-text strong { display: block; font-weight: 600; color: #212529; }
+  .status-text span { font-size: 0.9rem; color: #6c757d; }
+  .status-pending { color: #adb5bd; }
+  .status-processing .spinner-border {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: #0d6efd;
+    border-width: 0.2em;
+  }
+  .status-complete { color: #198754; }
+  
+  /* --- What Happens Next Box (No changes) --- */
+  .next-steps {
+    background: #e7f1ff;
+    border-left: 4px solid #0d6efd;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .next-steps .bi { font-size: 1.5rem; color: #0d6efd; }
+</style>
+
+
+<h2>2) Upload ID Document</h2>
+<form id="document-form" method="post" action="{{ url_for('document_upload', user_id=user_id) }}" enctype="multipart/form-data">
+  <div class="mb-3">
+    <label class="form-label">
+      Upload ID (driver’s license, passport, etc.)
+    </label>
+    <input type="file" name="document" accept="image/*" class="form-control" required id="doc-input">
+  </div>
+  <button type="submit" class="btn btn-primary">Process Document</button>
+</form>
+
+<div id="verification-overlay">
+  <div class="verification-card">
+    <h2>Identity Verification</h2>
+    <p class="subtitle">We're verifying your identity to ensure secure access</p>
+
+    <div class="progress-container">
+      <div class="progress-label">Verification Progress</div>
+      <div class="progress" role="progressbar">
+        <div id="main-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
       </div>
-      <div class="card-body">
-        <form
-          method="post"
-          action="{{ url_for('document_upload', user_id=user_id) }}"
-          enctype="multipart/form-data"
-        >
-          <div class="mb-3">
-            <label for="document" class="form-label">
-              Upload ID (driver’s license, passport, etc.)
-            </label>
-            <input
-              id="document"
-              type="file"
-              name="document"
-              accept="image/*,application/pdf"
-              class="form-control"
-              required
-              onchange="previewDoc(event)"
-            >
-          </div>
-          <div class="text-center mb-3">
-            <embed
-              id="doc-preview"
-              src="#"
-              type="application/pdf"
-              style="display:none; width:100%; height:300px;"
-            >
-            <img
-              id="img-doc-preview"
-              src="#"
-              alt="Document preview"
-              class="img-fluid"
-              style="display:none; max-height:300px;"
-            >
-          </div>
-          <div class="text-end">
-            <button type="submit" class="btn btn-success">
-              <i class="bi bi-check-circle-fill me-1"></i>
-              Process Document
-            </button>
-          </div>
-        </form>
+      <div id="progress-text" class="text-primary fw-bold">Processing...</div>
+    </div>
+
+    <div class="image-analysis-grid">
+      <div class="image-box">
+        <h4>ID Document</h4>
+        <div class="image-wrapper">
+          <img id="id-preview" src="#" alt="ID Preview">
+          <canvas id="id-canvas"></canvas>
+          <div class="scan-bar"></div>
+        </div>
+        <div class="image-status">
+          <i class="bi bi-check-circle-fill"></i> ID document detected
+        </div>
+      </div>
+      <div class="image-box">
+        <h4>Selfie Photo</h4>
+        <div class="image-wrapper">
+          <img id="selfie-preview" src="{{ url_for('uploaded_file', filename=selfie) }}" alt="Your selfie">
+          <canvas id="selfie-canvas"></canvas>
+          <div class="scan-bar"></div>
+        </div>
+        <div class="image-status">
+          <i class="bi bi-check-circle-fill"></i> Face detected
+        </div>
       </div>
     </div>
+
+    <h4>Verification Analysis</h4>
+    <ul class="analysis-list">
+      <li id="status-auth">
+        <div class="status-icon status-pending"><i class="bi bi-shield-slash"></i></div>
+        <div class="status-text"><strong>Document authenticity</strong><span>We've verified your ID document is authentic and valid</span></div>
+      </li>
+      <li id="status-detect">
+        <div class="status-icon status-pending"><i class="bi bi-person-bounding-box"></i></div>
+        <div class="status-text"><strong>Face detection</strong><span>We've detected and mapped your facial features</span></div>
+      </li>
+      <li id="status-match">
+        <div class="status-icon status-pending"><i class="bi bi-person-video2"></i></div>
+        <div class="status-text"><strong>Face matching</strong><span>Comparing your selfie with the photo on your ID document</span></div>
+      </li>
+    </ul>
+
+    <div class="next-steps">
+      <i class="bi bi-info-circle-fill"></i>
+      <div>Our system is analyzing your ID and selfie to verify your identity. This typically takes less than a minute. Please don't close this page during the verification process.</div>
+    </div>
+
+    <div class="text-center">
+      <a href="{{ url_for('index') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat"></i> Retry Verification</a>
+    </div>
+
   </div>
 </div>
 
+
+
 <script>
-  function previewDoc(event) {
-    const [file] = event.target.files;
-    const pdf = document.getElementById('doc-preview');
-    const img = document.getElementById('img-doc-preview');
-    if (!file) {
-      pdf.style.display = img.style.display = 'none';
-      return;
+  document.addEventListener('DOMContentLoaded', () => {
+    // --- Element References ---
+    const form = document.getElementById('document-form');
+    const fileIn = document.getElementById('doc-input');
+    const overlay = document.getElementById('verification-overlay');
+    
+    // Image and Canvas references
+    const idPreview = document.getElementById('id-preview');
+    const selfiePreview = document.getElementById('selfie-preview');
+    const idCanvas = document.getElementById('id-canvas');
+    const selfieCanvas = document.getElementById('selfie-canvas');
+    const idCtx = idCanvas.getContext('2d');
+    const selfieCtx = selfieCanvas.getContext('2d');
+
+    // Status references
+    const progressBar = document.getElementById('main-progress-bar');
+    const statusAuth = document.getElementById('status-auth');
+    const statusDetect = document.getElementById('status-detect');
+    const statusMatch = document.getElementById('status-match');
+
+    // --- File Preview Logic ---
+    fileIn.addEventListener('change', () => {
+      if (!fileIn.files.length) return;
+      const reader = new FileReader();
+      reader.onload = e => { idPreview.src = e.target.result; };
+      reader.readAsDataURL(fileIn.files[0]);
+    });
+
+    // --- Mesh Drawing Functions ---
+    function drawTriangularMesh(ctx, width, height) {
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+      ctx.lineWidth = 1;
+      const points = Array.from({ length: 80 }, () => [Math.random() * width, Math.random() * height]);
+      const delaunay = d3.Delaunay.from(points);
+      delaunay.render(ctx);
+      ctx.stroke();
     }
-    const url = URL.createObjectURL(file);
-    if (file.type === 'application/pdf') {
-      img.style.display = 'none';
-      pdf.src = url;
-      pdf.style.display = 'block';
-    } else {
-      pdf.style.display = 'none';
-      img.src = url;
-      img.style.display = 'block';
+
+    function drawGridMesh(ctx, width, height) {
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      const gridSize = 20;
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
     }
-  }
+    
+    // --- Status Update Helper Function ---
+    function updateStatus(element, status) {
+      const iconDiv = element.querySelector('.status-icon');
+      iconDiv.className = 'status-icon';
+      if (status === 'processing') {
+        iconDiv.classList.add('status-processing');
+        iconDiv.innerHTML = '<div class="spinner-border" role="status"></div>';
+      } else if (status === 'complete') {
+        iconDiv.classList.add('status-complete');
+        iconDiv.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+      }
+    }
+
+    // --- Form Submission & Animation ---
+    form.addEventListener('submit', e => {
+      if (!fileIn.files.length) return;
+      e.preventDefault();
+      overlay.style.display = 'flex';
+
+      // --- Draw mesh and grid on the canvases ---
+      setTimeout(() => {
+        selfieCanvas.width = selfiePreview.offsetWidth;
+        selfieCanvas.height = selfiePreview.offsetHeight;
+        drawTriangularMesh(selfieCtx, selfieCanvas.width, selfieCanvas.height);
+
+        idCanvas.width = idPreview.offsetWidth;
+        idCanvas.height = idPreview.offsetHeight;
+        drawGridMesh(idCtx, idCanvas.width, idCanvas.height);
+      }, 100);
+
+      // 1. Start overall progress bar animation
+      progressBar.style.width = '100%';
+      progressBar.style.transition = 'width 4s linear';
+
+      // 2. Start sequential analysis updates
+      updateStatus(statusAuth, 'processing');
+      setTimeout(() => {
+        updateStatus(statusAuth, 'complete');
+        updateStatus(statusDetect, 'processing');
+        setTimeout(() => {
+          updateStatus(statusDetect, 'complete');
+          updateStatus(statusMatch, 'processing');
+        }, 1000);
+      }, 1000);
+
+      // 3. Submit the form after the animations have run
+      setTimeout(() => {
+        form.submit();
+      }, 4000);
+    });
+  });
 </script>
+
 {% endblock %}
